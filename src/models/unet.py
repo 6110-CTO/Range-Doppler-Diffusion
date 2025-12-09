@@ -1,0 +1,251 @@
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+import math
+
+# Sinusoidal position embeddings for timesteps.
+class SinusoidalPosEmb(nn.Module):
+    def __init__(self, dim):
+        super().__init__()
+        self.dim = dim
+
+    def forward(self, x):
+        device = x.device
+        half_dim = self.dim // 2
+        emb_factor = math.log(10000) / (half_dim - 1)
+        emb = torch.exp(torch.arange(half_dim, device=device) * -emb_factor)
+        emb = x[:, None] * emb[None, :]  # shape: (B, half_dim)
+        emb = torch.cat([torch.sin(emb), torch.cos(emb)], dim=-1)
+        return emb  # shape: (B, dim)
+
+# Self-attention block operating on 2D features.
+class SelfAttention2d(nn.Module):
+    def __init__(self, channels, num_heads=4):
+        super().__init__()
+        self.channels = channels
+        self.num_heads = num_heads
+        self.norm = nn.GroupNorm(num_groups=8, num_channels=channels)
+        self.qkv = nn.Conv2d(channels, channels * 3, kernel_size=1)
+        self.proj_out = nn.Conv2d(channels, channels, kernel_size=1)
+
+    def forward(self, x):
+        B, C, H, W = x.shape
+        h = self.norm(x)
+        qkv = self.qkv(h)  # (B, 3C, H, W)
+        q, k, v = torch.chunk(qkv, 3, dim=1)
+
+        # Reshape for multi-head attention.
+        q = q.reshape(B, self.num_heads, C // self.num_heads, H * W)
+        k = k.reshape(B, self.num_heads, C // self.num_heads, H * W)
+        v = v.reshape(B, self.num_heads, C // self.num_heads, H * W)
+
+        attn = torch.einsum('bhcn,bhcm->bhnm', q, k) / math.sqrt(C // self.num_heads)
+        attn = torch.softmax(attn, dim=-1)
+
+        out = torch.einsum('bhnm,bhcm->bhcn', attn, v)
+        out = out.reshape(B, C, H, W)
+        out = self.proj_out(out)
+        return x + out  # Residual connection
+
+# A Double Convolution block with two convs (with GroupNorm and SiLU activation)
+class DoubleConv(nn.Module):
+    def __init__(self, in_ch, out_ch):
+        super().__init__()
+        self.double_conv = nn.Sequential(
+            nn.Conv2d(in_ch, out_ch, kernel_size=3, padding=1),
+            nn.GroupNorm(num_groups=8, num_channels=out_ch),
+            nn.SiLU(),
+            nn.Conv2d(out_ch, out_ch, kernel_size=3, padding=1),
+            nn.GroupNorm(num_groups=8, num_channels=out_ch),
+            nn.SiLU()
+        )
+    def forward(self, x):
+        return self.double_conv(x)
+
+# Downsample with a double conv, then max pooling.
+class Down(nn.Module):
+    def __init__(self, in_ch, out_ch):
+        super().__init__()
+        self.conv = DoubleConv(in_ch, out_ch)
+        self.pool = nn.MaxPool2d(2)
+    def forward(self, x):
+        x_conv = self.conv(x)
+        x_down = self.pool(x_conv)
+        return x_conv, x_down
+
+# Upsample with transpose convolution, concatenation of skip connection, and double conv.
+class Up(nn.Module):
+    def __init__(self, in_channels, skip_channels, out_channels):
+        super().__init__()
+        self.up = nn.ConvTranspose2d(in_channels, out_channels, kernel_size=2, stride=2)
+        self.conv = DoubleConv(out_channels + skip_channels, out_channels)
+    def forward(self, x, skip):
+        x = self.up(x)
+        # Adjust spatial dims if needed.
+        if x.size() != skip.size():
+            diffY = skip.size(2) - x.size(2)
+            diffX = skip.size(3) - x.size(3)
+            x = F.pad(x, [0, diffX, 0, diffY])
+        x = torch.cat([skip, x], dim=1)
+        return self.conv(x)
+
+# The refined conditional U-Net for diffusion denoising.
+class ConditionalUNet(nn.Module):
+    def __init__(self, in_channels=4, out_channels=2, time_emb_dim=256):
+        """
+        in_channels=4: concatenated [x_t_real, x_t_imag, cond_real, cond_imag]
+        out_channels=2: predicting noise for real and imaginary parts.
+        time_emb_dim: dimensionality of time embeddings.
+        """
+        super().__init__()
+        # Time embedding network with two linear layers.
+        self.time_emb = nn.Sequential(
+            SinusoidalPosEmb(time_emb_dim),
+            nn.Linear(time_emb_dim, time_emb_dim),
+            nn.SiLU(),
+            nn.Linear(time_emb_dim, time_emb_dim)
+        )
+        # Encoder
+        self.inc = DoubleConv(in_channels, 64)
+        self.down1 = Down(64, 128)
+        self.down2 = Down(128, 256)
+        self.down3 = Down(256, 256)
+        # Inject self-attention at intermediate scales.
+        self.attn1 = SelfAttention2d(128)  # after first down
+        self.attn2 = SelfAttention2d(256)  # after second down
+        # Bottleneck (with extra capacity and attention)
+        self.bot = DoubleConv(256, 512)
+        self.bot_attn = SelfAttention2d(512)
+        # Decoder with time embeddings injected at multiple scales.
+        self.up1 = Up(512, skip_channels=256, out_channels=256)
+        self.up2 = Up(256, skip_channels=256, out_channels=256)
+        self.up3 = Up(256, skip_channels=128, out_channels=128)
+        self.up4 = Up(128, skip_channels=64, out_channels=64)
+        self.outc = nn.Conv2d(64, out_channels, kernel_size=1)
+        # Linear projections for time embeddings at different stages.
+        self.time_proj_bot = nn.Linear(time_emb_dim, 512)
+        self.time_proj_up1 = nn.Linear(time_emb_dim, 256)
+        self.time_proj_up2 = nn.Linear(time_emb_dim, 256)
+        self.time_proj_up3 = nn.Linear(time_emb_dim, 128)
+
+    def forward(self, x, t):
+        """
+        x: (B, 4, H, W) with channels [x_t_real, x_t_imag, cond_real, cond_imag]
+        t: (B,) normalized timesteps.
+        """
+        # Compute time embedding.
+        t_emb = self.time_emb(t)  # shape: (B, time_emb_dim)
+        
+        # Encoder
+        x1 = self.inc(x)            # (B, 64, H, W)
+        x2_skip, x2 = self.down1(x1)  # x2_skip: (B, 128, H, W); x2: (B, 128, H/2, W/2)
+        #x2_skip = self.attn1(x2_skip) # refine low-level features
+
+        x3_skip, x3 = self.down2(x2)  # x3_skip: (B, 256, H/2, W/2); x3: (B, 256, H/4, W/4)
+        #x3_skip = self.attn2(x3_skip) # additional attention at this scale
+
+        x4_skip, x4 = self.down3(x3)  # x4_skip: (B, 256, H/4, W/4); x4: (B, 256, H/8, W/8)
+        
+        # Bottleneck
+        x_bot = self.bot(x4)
+        #x_bot = self.bot_attn(x_bot)
+        # Add time embedding for the bottleneck.
+        t_bot = self.time_proj_bot(t_emb).view(-1, 512, 1, 1)
+        x_bot = x_bot + t_bot
+        
+        # Decoder with skip connections and time embedding injections.
+        x = self.up1(x_bot, x4_skip)  # (B, 256, H/4, W/4)
+        t_up1 = self.time_proj_up1(t_emb).view(-1, 256, 1, 1)
+        x = x + t_up1
+        
+        x = self.up2(x, x3_skip)      # (B, 256, H/2, W/2)
+        t_up2 = self.time_proj_up2(t_emb).view(-1, 256, 1, 1)
+        x = x + t_up2
+        
+        x = self.up3(x, x2_skip)      # (B, 128, H, W)
+        t_up3 = self.time_proj_up3(t_emb).view(-1, 128, 1, 1)
+        x = x + t_up3
+        
+        x = self.up4(x, x1)           # (B, 64, H, W)
+        output = self.outc(x)
+        return output
+
+
+
+class DetUNet(nn.Module):
+    def __init__(self, in_channels=4, out_channels=2, time_emb_dim=256):
+        """
+        in_channels: e.g. 4 for [x_t_real, x_t_imag, cond_real, cond_imag]
+        out_channels: e.g. 2 for [noise_real, noise_imag]
+        time_emb_dim: dimension of the sinusoidal time embedding
+        """
+        super().__init__()
+        # Time embedding network
+        self.time_emb = nn.Sequential(
+            SinusoidalPosEmb(time_emb_dim),
+            nn.Linear(time_emb_dim, time_emb_dim),
+            nn.SiLU(),
+            nn.Linear(time_emb_dim, time_emb_dim)
+        )
+
+        # Encoder
+        self.inc   = DoubleConv(in_channels, 64)
+        self.down1 = Down(64, 128)
+        self.attn1 = SelfAttention2d(128)
+        self.down2 = Down(128, 256)
+        self.attn2 = SelfAttention2d(256)
+        self.down3 = Down(256, 256)
+
+        # Bottleneck
+        self.bot           = DoubleConv(256, 512)
+        self.time_proj_bot = nn.Linear(time_emb_dim, 512)
+
+        # Decoder
+        self.up1 = Up(512, skip_channels=256, out_channels=256)
+        self.time_proj_up1 = nn.Linear(time_emb_dim, 256)
+        self.up2 = Up(256, skip_channels=256, out_channels=256)
+        self.time_proj_up2 = nn.Linear(time_emb_dim, 256)
+        self.up3 = Up(256, skip_channels=128, out_channels=128)
+        self.time_proj_up3 = nn.Linear(time_emb_dim, 128)
+        self.up4 = Up(128, skip_channels=64,  out_channels=64)
+
+        # Output heads
+        self.outc    = nn.Conv2d(64, out_channels, kernel_size=1)
+        # Detection head: per-pixel logits map
+        self.detector = nn.Conv2d(64, 1, kernel_size=1)
+
+    def forward(self, x, t):
+        """
+        x: (B, in_channels, H, W)
+        t: (B,) integer timesteps
+        Returns:
+          noise_pred: (B, out_channels, H, W)
+          det_pred:   (B, 1, H, W) per-pixel logits
+        """
+        # Compute time embedding
+        t_emb = self.time_emb(t.float().unsqueeze(-1))  # (B, time_emb_dim)
+
+        # Encoder
+        x1     = self.inc(x)
+        x2_s, x2 = self.down1(x1); #x2_s = self.attn1(x2_s)
+        x3_s, x3 = self.down2(x2); #x3_s = self.attn2(x3_s)
+        x4_s, x4 = self.down3(x3)
+
+        # Bottleneck + time
+        x_bot = self.bot(x4)
+        t_bot = self.time_proj_bot(t_emb).view(-1, 512, 1, 1)
+        x_bot = x_bot + t_bot
+
+        # Decoder with skip + time
+        x = self.up1(x_bot, x4_s)
+        x = x + self.time_proj_up1(t_emb).view(-1, 256, 1, 1)
+        x = self.up2(x, x3_s)
+        x = x + self.time_proj_up2(t_emb).view(-1, 256, 1, 1)
+        x = self.up3(x, x2_s)
+        x = x + self.time_proj_up3(t_emb).view(-1, 128, 1, 1)
+        x = self.up4(x, x1)
+
+        # Heads
+        noise_pred = self.outc(x)
+        det_pred   = self.detector(x)
+        return noise_pred, det_pred

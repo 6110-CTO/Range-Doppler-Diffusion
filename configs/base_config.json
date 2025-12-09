@@ -1,0 +1,18 @@
+{
+    "SNR": [10],
+    "CNR": [15],
+    "NU": [1.0],
+    "n_targets": 8,
+    "rand_n_targets": true,
+    "beta_end": 0.01,
+    "beta_start": 0.0001,
+    "batch_size": 16,
+    "num_epochs": 400,
+    "noise_steps": 2000,
+    "num_workers": 4,
+    "dataset_size": 5000,
+    "time_emb_dim": 256,
+    "learning_rate": 0.0001,
+    "scheduler_type": "cosine"
+  }
+  

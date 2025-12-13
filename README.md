@@ -153,11 +153,12 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## Citation
 
+After publication, switch the citation
 If you use this code in your research, please cite:
 
 ```bibtex
 @software{rddiffusion2025,
-  author = {Gra, Ari},
+  author = {Ari Granevich},
   title = {RDDiffusion: Diffusion Models for Radar Target Detection},
   year = {2025},
   url = {https://github.com/arigra/rddiff}

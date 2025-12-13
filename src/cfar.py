@@ -73,33 +73,6 @@ def tm_cfar_2d(signal, num_train, num_guard, trim_ratio, Pfa):
                 detection_map[i - pad, j - pad] = 1
     return detection_map
 
-# def simulate_cfar_performance(cfar_func, specified_Pfa, nu_val, num_trials=100,
-#                               n_targets=3, random_n_targets=False, **cfar_kwargs):
-#     """
-#     For a given CFAR function, specified false–alarm parameter, and clutter nu,
-#     simulate num_trials frames and compute the average probability of detection (Pd)
-#     and measured probability of false alarm (Pfa_meas).
-#     """
-#     dataset = DAFCDataset(num_samples=num_trials, n_targets=n_targets,
-#                            random_n_targets=random_n_targets, nu=nu_val)
-#     total_true_detections = 0
-#     total_targets = 0
-#     total_false_alarms = 0
-#     total_non_target_cells = 0
-#     for i in range(num_trials):
-#         _, _, _, _, RD_map, rd_label = dataset[i]
-#         RD_mag = torch.abs(RD_map).detach().numpy()
-#         detection_map = cfar_func(RD_mag, **cfar_kwargs, Pfa=specified_Pfa)
-#         gt = rd_label.detach().numpy()
-#         true_detections = np.sum((detection_map == 1) & (gt == 1))
-#         false_alarms = np.sum((detection_map == 1) & (gt == 0))
-#         total_targets += np.sum(gt)
-#         total_true_detections += true_detections
-#         total_false_alarms += false_alarms
-#         total_non_target_cells += (gt.size - np.sum(gt))
-#     pd_rate = total_true_detections / total_targets if total_targets > 0 else 0
-#     measured_pfa = total_false_alarms / total_non_target_cells if total_non_target_cells > 0 else 0
-#     return pd_rate, measured_pfa
 
 
 def simulate_cfar_performance(cfar_func, specified_Pfa, nu_val, num_trials=100,

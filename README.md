@@ -4,12 +4,12 @@
 [![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
 [![PyTorch](https://img.shields.io/badge/PyTorch-2.0+-ee4c2c.svg)](https://pytorch.org/)
 
-Diffusion model for radar target detection using UNet architecture with Student-T noise scheduling. This project implements a deep learning approach to detect radar targets in heavy clutter environments using diffusion models.
+Diffusion model for radar target detection using dual-head UNet architecture with Student-T noise scheduling. This project implements a deep learning approach to detect radar targets in heavy clutter environments using diffusion models.
 
 ## Features
 
 - **Student-T Diffusion Process**: Robust noise scheduling for radar signal processing
-- **Conditional UNet Architecture**: Time-conditioned denoising network
+- **Conditional dual-head UNet Architecture**: Time-conditioned denoising network
 - **Synthetic Radar Dataset Generation**: Configurable SNR, CNR, and target parameters
 - **CFAR Detection**: Classical CA-CFAR baseline for comparison
 - **Visualization Tools**: Built-in plotting and analysis utilities
@@ -92,7 +92,7 @@ model, val_dataset = train_model(config, device, run_name="my_model")
 
 ```
 rddiff/
-├── main.py                 # Main training and inference pipeline
+├── main.py                # Main training and inference pipeline
 ├── configs/
 │   └── base_config.json   # Default configuration
 ├── src/
@@ -107,17 +107,19 @@ rddiff/
 │   ├── visfuncs.py        # Visualization functions
 │   └── plotters.py        # Additional plotting utilities
 ├── requirements.txt       # Python dependencies
-├── setup.py              # Package installation
-├── pyproject.toml        # Modern Python packaging
-└── README.md             # This file
+├── setup.py               # Package installation
+├── pyproject.toml         # Modern Python packaging
+└── README.md              # This file
 ```
 
 ## Model Architecture
 
+![RDDiffusion architecture](images/DualModel.png)
+
 ### DetUNet
 - **Input**: 4-channel tensor (range-Doppler map + conditions)
 - **Output**: 2-channel denoised target map
-- **Architecture**: U-Net with skip connections and time embeddings
+- **Architecture**: Dual-head U-Net with skip connections and time embeddings. One head for denoising, the second for detection
 - **Time Conditioning**: Sinusoidal positional embeddings
 
 ### StudentTDiffusion
@@ -127,6 +129,8 @@ rddiff/
 - **Loss**: MSE between predicted and actual noise
 
 ## Dataset
+
+![Synthetic dataset creation](images/dataset_creation.png)
 
 The synthetic radar dataset simulates:
 - **Range-Doppler maps** (64x64 bins)

@@ -80,23 +80,12 @@ def validate(diffusion, dataloader, device, use_standard_loss=True, use_rd_loss=
     return avg_val_loss, gen_mse, gen_psnr
 
 
-# Training loop for diffusion + per-pixel detection head
-# Assumes diffusion.model(x_noisy_cond, t_norm) returns (noise_pred, det_map_pred)
-# where det_map_pred has shape (B, 1, H, W) and labels has shape (B, H, W).
+
 
 def train_det_epoch(diffusion, dataloader, optimizer, device, 
                     lambda_det=0.01):
     """
     Run one epoch of training for the combined diffusion + detection model.
-
-    diffusion: instance of ConditionalDiffusion wrapping a UNet with detection head
-    dataloader: yields batches of (signals_norm, rd_signals_norm, IQs_norm, RDs_norm,
-                                clutter_all, gauss_all, labels, scnr_dBs)
-    optimizer: optimizer for diffusion.model parameters
-    device: torch device
-    lambda_det: weight for the detection loss
-
-    Returns average total loss over batches.
     """
     diffusion.train()
     total_loss = 0.0
@@ -151,7 +140,6 @@ def train_det_epoch(diffusion, dataloader, optimizer, device,
 def det_validate(diffusion, dataloader, device, lambda_det=0):
     """
     Validate both denoising and detection performance.
-    Returns average combined loss, plus generation MSE/PSNR for the first batch.
     """
     diffusion.eval()
     total_loss = 0.0

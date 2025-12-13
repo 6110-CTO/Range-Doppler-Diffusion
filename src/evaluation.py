@@ -6,31 +6,6 @@ from torch.utils.data import Dataset, DataLoader, ConcatDataset, TensorDataset
 from dataset import *
 import numpy as np
 
-# def plot_pd_pfa(results: dict, save_path: str = 'pd_pfa.png'):
-#     """Plot PD vs PFA (ROC curves) for different ν values.
-
-#     Parameters
-#     ----------
-#     results : dict
-#         A dictionary with keys as ν values and values as (pd, pfa) tuples.
-#     save_path : str
-#         File path to save the figure.
-#     """
-#     plt.figure(figsize=(12, 6))
-#     plt.title('ROC Curves for Different Clutter Conditions', fontsize=16, fontweight='bold')
-
-#     for nu, (pd, pfa) in results.items():
-#         plt.plot(pfa, pd, label=f'ν = {nu}', linewidth=2, marker='o')
-
-#     plt.xlabel('Probability of False Alarm (log scale)', fontsize=12)
-#     plt.ylabel('Probability of Detection', fontsize=12)
-#     plt.grid(True, linestyle='--', alpha=0.7)
-#     plt.xscale('log')
-#     plt.legend(title='Parameter ν', fontsize=10)
-#     plt.tight_layout()
-#     plt.savefig(save_path, dpi=300)
-#     plt.close()
-
 def load_trained_models():
     """Load trained range and Doppler models"""
     range_model = DAFCRadarNet(detection_type="range", map_type="IQ")
@@ -55,31 +30,6 @@ def load_trained_models():
 
     return range_model, doppler_model
 
-# def plot_pd_scnr(results: dict, save_path: str = 'pd_scnr.png'):
-#     """Plot PD vs SCNR curves for different ν values.
-
-#     Parameters
-#     ----------
-#     results : dict
-#         A dictionary with keys as ν values and values as (pd, pfa, scnr) 
-#         tuples, where pd and pfa are probabilities and scnr is a list 
-#         of SCNR values.
-#     save_path : str
-#         File path to save the figure.
-#     """
-#     plt.figure(figsize=(12, 6))
-#     plt.title('Detection Performance vs SCNR', fontsize=16, fontweight='bold')
-
-#     for nu, (pd, pfa, scnr) in results.items():
-#         plt.plot(scnr, pd, label=f'ν = {nu}', linewidth=2, marker='o')
-
-#     plt.xlabel('SCNR (dB)', fontsize=12)
-#     plt.ylabel('Probability of Detection', fontsize=12)
-#     plt.grid(True, linestyle='--', alpha=0.7)
-#     plt.legend(title='Parameter ν', fontsize=10)
-#     plt.tight_layout()
-#     plt.savefig(save_path, dpi=300)
-#     plt.close()
 
 
 def plot_pd_pfa(results: dict, save_path: str = 'pd_pfa.png'):

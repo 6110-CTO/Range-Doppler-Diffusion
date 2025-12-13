@@ -8,7 +8,7 @@
     "beta_start": 0.0001,
     "batch_size": 16,
     "num_epochs": 400,
-    "noise_steps": 2000,
+    "noise_steps": 1000,
     "num_workers": 4,
     "dataset_size": 5000,
     "time_emb_dim": 256,

@@ -77,7 +77,7 @@ model, val_dataset = train_model(config, device, run_name="my_model")
 | `NU` | Student-T degrees of freedom | `[1.0]` |
 | `n_targets` | Max number of targets per sample | `8` |
 | `rand_n_targets` | Randomize target count | `true` |
-| `noise_steps` | Diffusion timesteps (T) | `2000` |
+| `noise_steps` | Diffusion timesteps (T) | `1000` |
 | `beta_start` | Starting beta value | `0.0001` |
 | `beta_end` | Ending beta value | `0.01` |
 | `scheduler_type` | Noise schedule (`cosine`/`linear`) | `cosine` |

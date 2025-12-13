@@ -19,16 +19,16 @@ Diffusion model for radar target detection using dual-head UNet architecture wit
 ### Quick Install
 
 ```bash
-git clone https://github.com/arigra/rddiff.git
-cd rddiff
+git clone https://github.com/arigra/Range-Doppler-Diffusion.git
+cd Range-Doppler-Diffusion
 pip install -e .
 ```
 
 ### Manual Install
 
 ```bash
-git clone https://github.com/arigra/rddiff.git
-cd rddiff
+git clone https://github.com/arigra/Range-Doppler-Diffusion.git
+cd Range-Doppler-Diffusion
 pip install -r requirements.txt
 ```
 

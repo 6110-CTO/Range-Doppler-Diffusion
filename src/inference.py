@@ -8,7 +8,7 @@ def run_inference(cond_diffusion , norm_val_dataset, checkpoint, device):
     cond_diffusion.load_state_dict(torch.load(checkpoint_path, map_location=device))
     cond_diffusion.eval()
 
-    signals_norm, rd_signals_norm, IQs_norm, RDs_norm, clutter_all, gauss_all, labels, scnr_dBs = norm_val_dataset[random.randint(1,50)]
+    signals_norm, rd_signals_norm, IQs_norm, RDs_norm, clutter_all, gauss_all, labels, scnr_dBs = norm_val_dataset[random.randint(1,4)]
     cond_img = torch.cat([RDs_norm.real.unsqueeze(0), RDs_norm.imag.unsqueeze(0)], dim=0)  # (2, H, W)
     cond_img = cond_img.unsqueeze(0).to(device)  # (1, 2, H, W)
     # The desired sample shape for the diffusion model is (1,2,H,W)

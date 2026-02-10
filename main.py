@@ -105,8 +105,8 @@ def main():
     config_path = os.path.join(ROOT, "configs", "base_config.json")
     config = load_config(config_path)
     
-    model, val_dataset = train_model(config, device, run_name="det_diff_model")
-    checkpoint_path = "/home/hawk/Desktop/Heavy Detector/Heavy-Clutter-Detection/Thesis/detDif03.pth"
+    model, val_dataset = train_model(config, device, run_name="dmodel")
+    checkpoint_path = "/home/hawk/Desktop/Range-Doppler-Diffusion/det_diff_model.pth"
     run_eval(model, val_dataset, checkpoint_path, device)
 
 if __name__ == "__main__":

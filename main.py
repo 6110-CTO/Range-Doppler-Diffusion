@@ -62,7 +62,7 @@ def train_model(config, device, run_name="model"):
     optimizer = torch.optim.Adam(cond_diffusion.parameters(), config.learning_rate)
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
         optimizer, mode="min", factor=0.5, patience=10,
-        threshold=1e-4, cooldown=15, min_lr=1e-6, verbose=True
+        threshold=1e-4, cooldown=15, min_lr=1e-6
     )
     
     num_epochs = config.num_epochs

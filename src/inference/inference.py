@@ -2,7 +2,8 @@ import random
 import torch
 import matplotlib.pyplot as plt
 
-def run_inference(cond_diffusion , norm_val_dataset, checkpoint, device):
+
+def run_inference(cond_diffusion, norm_val_dataset, checkpoint, device):
 
     checkpoint_path = checkpoint
     cond_diffusion.load_state_dict(torch.load(checkpoint_path, map_location=device))
@@ -14,11 +15,11 @@ def run_inference(cond_diffusion , norm_val_dataset, checkpoint, device):
     # The desired sample shape for the diffusion model is (1,2,H,W)
     sample_shape = (1, 2, RDs_norm.shape[0], RDs_norm.shape[1])
 
-    # 5. Generate a denoised sample using the diffusion model
+    # Generate a denoised sample using the diffusion model
     with torch.no_grad():
         generated_sample = cond_diffusion.sample(cond_img, sample_shape)  # (1,2,H,W)
 
-    # 6. Convert the generated 2-channel tensor into a complex tensor
+    # Convert the generated 2-channel tensor into a complex tensor
     generated_complex = torch.complex(generated_sample[0,0,:,:], generated_sample[0,1,:,:])
     clean_np = rd_signals_norm.cpu().numpy()
     noisy_np = RDs_norm.cpu().numpy()

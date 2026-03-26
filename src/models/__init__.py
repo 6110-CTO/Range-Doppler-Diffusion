@@ -2,5 +2,6 @@
 
 from .unet import DetUNet
 from .diffusion import StudentTDiffusion
+from .ddim_sampler import DDIMSampler
 
-__all__ = ["DetUNet", "StudentTDiffusion"]
+__all__ = ["DetUNet", "StudentTDiffusion", "DDIMSampler"]

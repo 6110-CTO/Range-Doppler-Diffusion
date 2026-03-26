@@ -2,6 +2,7 @@ import torch
 import matplotlib.pyplot as plt
 from torch.utils.data import DataLoader
 
+
 def visualize_sample(dataset, sample_index: int = 0):
     """
     Works on either a Dataset or a DataLoader whose examples are
@@ -37,7 +38,7 @@ def visualize_sample(dataset, sample_index: int = 0):
     plt.tight_layout(rect=[0, 0.03, 1, 0.95])
     plt.show()
 
-    # 3) Range‐Doppler plots
+    # 3) Range-Doppler plots
     plt.figure(figsize=(24, 6))
     rd_titles = ["Real Noisy RD", "Imag Noisy RD", "Abs Noisy RD", "Abs Clean RD", "Ground Truth"]
     rd_data   = [RD_map.real, RD_map.imag, torch.abs(RD_map), torch.abs(rd_clean), label]

@@ -1,88 +1,17 @@
+import os
 import math
+import logging
+
 import torch
 import torch.nn.functional as F
 
+from src.data import prep_dataset
+from src.models import DetUNet, StudentTDiffusion
 
-def train_one_epoch(diffusion, dataloader, optimizer, device, use_standard_loss=True, use_rd_loss=False):
-    diffusion.train()
-    epoch_loss = 0
-    e_rd_loss = 0
-    e_mse_loss = 0
-    for i, batch in enumerate(dataloader):
-        #signal, clutter, gaus_noise, IQ, rd_label, scnr_dB = batch
-        signals_norm, rd_signals_norm, IQs_norm, RDs_norm, clutter_all, gauss_all, labels, scnr_dBs = batch
-        IQ = RDs_norm
-        signal = rd_signals_norm
-        if signal.real.ndim == 3:
-            x0_real = signal.real.unsqueeze(1)
-            x0_imag = signal.imag.unsqueeze(1)
-            cond_real = IQ.real.unsqueeze(1)
-            cond_imag = IQ.imag.unsqueeze(1)
-        else:
-            x0_real = signal.real
-            x0_imag = signal.imag
-            cond_real = IQ.real
-            cond_imag = IQ.imag
-
-        # Concatenate to form 2-channel tensors.
-        x0 = torch.cat([x0_real, x0_imag], dim=1).to(device)   # (B,2,H,W)
-        cond = torch.cat([cond_real, cond_imag], dim=1).to(device)  # (B,2,H,W)
-
-        # Sample random timesteps for diffusion.
-        t = torch.randint(0, diffusion.T, (x0.shape[0],), device=device).long()
-
-        loss = diffusion.p_losses(x0, t, cond)
-        optimizer.zero_grad()
-        loss.backward()
-        optimizer.step()
-        epoch_loss += loss.item()
-        
-    return epoch_loss / len(dataloader)
-
-@torch.no_grad()
-def validate(diffusion, dataloader, device, use_standard_loss=True, use_rd_loss=False):
-    diffusion.eval()
-    total_val_loss = 0
-    iq_val_loss = 0
-    rd_val_loss = 0
-    gen_mse, gen_psnr = None, None
-
-    for i, batch in enumerate(dataloader):
-        signals_norm, rd_signals_norm, IQs_norm, RDs_norm, clutter_all, gauss_all, labels, scnr_dBs = batch
-        IQ = RDs_norm
-        signal = rd_signals_norm
-        if signal.real.ndim == 3:
-            x0_real = signal.real.unsqueeze(1)
-            x0_imag = signal.imag.unsqueeze(1)
-            cond_real = IQ.real.unsqueeze(1)
-            cond_imag = IQ.imag.unsqueeze(1)
-        else:
-            x0_real = signal.real
-            x0_imag = signal.imag
-            cond_real = IQ.real
-            cond_imag = IQ.imag
-
-        x0 = torch.cat([x0_real, x0_imag], dim=1).to(device)  # (B,2,H,W)
-        cond = torch.cat([cond_real, cond_imag], dim=1).to(device)  # (B,2,H,W)
-        
-        t = torch.randint(0, diffusion.T, (x0.shape[0],), device=device).long()
-        iq_loss = diffusion.p_losses(x0, t, cond)
-        total_val_loss += iq_loss.item()
-
-        # For the first batch, generate a sample and compute metrics.
-        if i == 0:
-            generated = diffusion.sample(cond, x0.shape)
-            mse_val = F.mse_loss(generated, x0).item()
-            psnr_val = 20 * math.log10(x0.max().item() / math.sqrt(mse_val)) if mse_val > 0 else 100
-            gen_mse, gen_psnr = mse_val, psnr_val
-
-    avg_val_loss = total_val_loss / len(dataloader)
-    return avg_val_loss, gen_mse, gen_psnr
+logger = logging.getLogger(__name__)
 
 
-
-
-def train_det_epoch(diffusion, dataloader, optimizer, device, 
+def train_det_epoch(diffusion, dataloader, optimizer, device,
                     lambda_det=0.01):
     """
     Run one epoch of training for the combined diffusion + detection model.
@@ -194,3 +123,57 @@ def det_validate(diffusion, dataloader, device, lambda_det=0):
 
     avg_loss = total_loss / len(dataloader)
     return avg_loss, gen_mse, gen_psnr
+
+
+def train_model(config, device, run_name="model"):
+    logger.info("Preparing dataset...")
+    train_loader, val_loader, train_dataset, val_dataset = prep_dataset(config)
+    logger.info("Successfully created diffusion dataset.")
+
+    # Model
+    cond_unet = DetUNet(
+        in_channels=4,
+        out_channels=2,
+        time_emb_dim=config.time_emb_dim
+    ).to(device)
+
+    cond_diffusion = StudentTDiffusion(
+        model=cond_unet,
+        scheduler_type=config.scheduler_type,
+        T=config.noise_steps,
+        beta_start=config.beta_start,
+        beta_end=config.beta_end,
+    ).to(device)
+
+    optimizer = torch.optim.Adam(cond_diffusion.parameters(), config.learning_rate)
+    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+        optimizer, mode="min", factor=0.5, patience=10,
+        threshold=1e-4, cooldown=15, min_lr=1e-6
+    )
+
+    num_epochs = config.num_epochs
+    best_mse_loss = float("inf")
+
+    # Determine root for saving checkpoints (project root = parent of src/)
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+    for epoch in range(num_epochs):
+        train_loss = train_det_epoch(cond_diffusion, train_loader, optimizer, device)
+        val_loss, gen_mse, gen_psnr = det_validate(cond_diffusion, val_loader, device)
+
+        logger.info(f"Epoch {epoch+1}/{num_epochs}: "
+                    f"Train Loss = {train_loss:.4f} | Val Loss = {val_loss:.4f}")
+
+        if gen_mse is not None:
+            logger.info(f"   [Generation Metrics] MSE: {gen_mse:.4f} | PSNR: {gen_psnr:.2f} dB")
+
+        scheduler.step(val_loss)
+
+        # Save best model
+        if gen_mse is not None and gen_mse < best_mse_loss:
+            best_mse_loss = gen_mse
+            save_path = os.path.join(root, f"{run_name}.pth")
+            torch.save(cond_diffusion.state_dict(), save_path)
+            logger.info(f"   --> Best MSE model saved at {save_path}.")
+
+    return cond_diffusion, val_dataset
